@@ -1,8 +1,25 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { z } from "zod";
 import { insertStudentSchema } from "@shared/schema";
+import { setupAuth } from "./auth";
+
+// Middleware to check if user is authenticated
+function isAuthenticated(req: Request, res: Response, next: NextFunction) {
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.status(401).json({ message: "Unauthorized" });
+}
+
+// Middleware to check if user is an admin
+function isAdmin(req: Request, res: Response, next: NextFunction) {
+  if (req.isAuthenticated() && req.user?.role === "admin") {
+    return next();
+  }
+  res.status(403).json({ message: "Forbidden - Admin access required" });
+}
 
 // Define validation schemas
 const idParamSchema = z.object({
@@ -19,8 +36,11 @@ const studentFiltersSchema = z.object({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // GET /api/stats - Get student statistics
-  app.get("/api/stats", async (req: Request, res: Response) => {
+  // Set up authentication
+  setupAuth(app);
+  
+  // GET /api/stats - Get student statistics (admin only)
+  app.get("/api/stats", isAdmin, async (req: Request, res: Response) => {
     try {
       const stats = await storage.getStudentStats();
       res.json(stats);
@@ -30,8 +50,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // GET /api/students - Get all students with optional filters
-  app.get("/api/students", async (req: Request, res: Response) => {
+  // GET /api/students - Get all students with optional filters (auth required)
+  app.get("/api/students", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const filterParams = studentFiltersSchema.parse({
         status: req.query.status,
@@ -58,8 +78,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // GET /api/students/:id - Get a specific student by ID
-  app.get("/api/students/:id", async (req: Request, res: Response) => {
+  // GET /api/students/:id - Get a specific student by ID (auth required)
+  app.get("/api/students/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { id } = idParamSchema.parse({ id: req.params.id });
       const student = await storage.getStudent(id);
@@ -83,8 +103,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // POST /api/students - Create a new student
-  app.post("/api/students", async (req: Request, res: Response) => {
+  // POST /api/students - Create a new student (admin only)
+  app.post("/api/students", isAdmin, async (req: Request, res: Response) => {
     try {
       const studentData = insertStudentSchema.parse(req.body);
       const student = await storage.createStudent(studentData);
@@ -103,8 +123,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // PATCH /api/students/:id - Update a student
-  app.patch("/api/students/:id", async (req: Request, res: Response) => {
+  // PATCH /api/students/:id - Update a student (admin only)
+  app.patch("/api/students/:id", isAdmin, async (req: Request, res: Response) => {
     try {
       const { id } = idParamSchema.parse({ id: req.params.id });
       
@@ -132,8 +152,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // DELETE /api/students/:id - Delete a student
-  app.delete("/api/students/:id", async (req: Request, res: Response) => {
+  // DELETE /api/students/:id - Delete a student (admin only)
+  app.delete("/api/students/:id", isAdmin, async (req: Request, res: Response) => {
     try {
       const { id } = idParamSchema.parse({ id: req.params.id });
       const success = await storage.deleteStudent(id);

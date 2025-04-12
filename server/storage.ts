@@ -124,6 +124,35 @@ export class MongoStorage implements IStorage {
       console.error("MongoDB connection error:", error);
       throw new Error("Failed to connect to MongoDB - using in-memory storage");
     }
+
+    // Create initial admin user if it doesn't exist
+    this.createInitialUsers();
+  }
+
+  private async createInitialUsers() {
+    try {
+      const adminExists = await this.UserModel.findOne({ username: 'admin' });
+      if (!adminExists) {
+        await this.UserModel.create({
+          username: 'admin',
+          password: 'password', // For development only
+          role: 'admin'
+        });
+        console.log('Created admin user');
+      }
+
+      const studentExists = await this.UserModel.findOne({ username: 'student' });
+      if (!studentExists) {
+        await this.UserModel.create({
+          username: 'student',
+          password: 'password', // For development only
+          role: 'student'
+        });
+        console.log('Created student user');
+      }
+    } catch (error) {
+      console.error('Error creating initial users:', error);
+    }
   }
 
   private getCached<T>(key: string): T | null {

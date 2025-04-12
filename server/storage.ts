@@ -1,10 +1,13 @@
-import { students, type Student, type InsertStudent, type StudentStats } from "@shared/schema";
+import { students, type Student, type InsertStudent, type StudentStats, type User, type InsertUser } from "@shared/schema";
 import mongoose, { Schema, Document } from "mongoose";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { Pool } from '@neondatabase/serverless';
+import session from "express-session";
+import connectMongo from "connect-mongo";
 
 // Define interfaces
 export interface IStorage {
+  // Student management
   getStudents(filters?: StudentFilters): Promise<Student[]>;
   getStudent(id: number): Promise<Student | undefined>;
   getStudentById(studentId: string): Promise<Student | undefined>;
@@ -12,6 +15,15 @@ export interface IStorage {
   updateStudent(id: number, student: Partial<InsertStudent>): Promise<Student | undefined>;
   deleteStudent(id: number): Promise<boolean>;
   getStudentStats(): Promise<StudentStats>;
+  
+  // User authentication
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, userData: Partial<User>): Promise<User | undefined>;
+  
+  // Session store for authentication
+  sessionStore: session.Store;
 }
 
 // Define filter types
@@ -36,6 +48,15 @@ interface IStudentDocument extends Document {
   address?: string;
   notes?: string;
   status: "active" | "inactive" | "pending";
+  userId?: number; // Reference to user account
+}
+
+interface IUserDocument extends Document {
+  username: string;
+  password: string;
+  role: "admin" | "student";
+  createdAt: Date;
+  lastLogin?: Date;
 }
 
 const StudentSchema = new Schema({
@@ -53,15 +74,31 @@ const StudentSchema = new Schema({
     enum: ["active", "inactive", "pending"], 
     default: "active", 
     required: true 
-  }
+  },
+  userId: { type: Number } // Reference to user account
+});
+
+const UserSchema = new Schema({
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  role: { 
+    type: String, 
+    enum: ["admin", "student"], 
+    default: "student", 
+    required: true 
+  },
+  createdAt: { type: Date, default: Date.now },
+  lastLogin: { type: Date }
 });
 
 // MongoDB Storage implementation
 export class MongoStorage implements IStorage {
   private StudentModel: mongoose.Model<IStudentDocument>;
+  private UserModel: mongoose.Model<IUserDocument>;
   private isConnected: boolean = false;
   private cache: Map<string, { data: any, timestamp: number }> = new Map();
   private cacheTTL = 60000; // 1 minute cache TTL
+  public sessionStore: session.Store;
 
   constructor() {
     try {
@@ -76,6 +113,11 @@ export class MongoStorage implements IStorage {
       mongoose.connect(connectionString);
       
       this.StudentModel = mongoose.model<IStudentDocument>('Student', StudentSchema);
+      this.UserModel = mongoose.model<IUserDocument>('User', UserSchema);
+      this.sessionStore = connectMongo.create({ 
+        mongoUrl: connectionString,
+        collectionName: 'sessions'
+      });
       this.isConnected = true;
       console.log("MongoDB connected successfully");
     } catch (error) {

@@ -693,17 +693,17 @@ try {
   
   // Add some initial data for development purposes
   (async () => {
-    // Create an admin user with pre-hashed password using scrypt
+    // Create an admin user with plain text password for development
     const adminUser = await storage.createUser({
       username: "admin",
-      password: "5dca53a20a71c3ec29f8f06f8868e3293d558f6c5a29b67ea8e5a40a7b5ac8d72c6e3cf583a76a4c4c1a9562562da65bc58f17d1c30c4544bd91521a677d9fc.4142f12fd7077446b105a1e4892b2a1b", // "password" hashed with scrypt
+      password: "password", // Plain text for development only
       role: "admin"
     });
 
-    // Create a student user with pre-hashed password using scrypt
+    // Create a student user with plain text password for development
     const studentUser = await storage.createUser({
       username: "student",
-      password: "5dca53a20a71c3ec29f8f06f8868e3293d558f6c5a29b67ea8e5a40a7b5ac8d72c6e3cf583a76a4c4c1a9562562da65bc58f17d1c30c4544bd91521a677d9fc.4142f12fd7077446b105a1e4892b2a1b", // "password" hashed with scrypt
+      password: "password", // Plain text for development only
       role: "student"
     });
     

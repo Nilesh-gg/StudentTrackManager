@@ -41,13 +41,30 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
+        console.log("LocalStrategy - Looking up user:", username);
         const user = await storage.getUserByUsername(username);
-        if (!user || !(await comparePasswords(password, user.password))) {
+        
+        if (!user) {
+          console.log("LocalStrategy - User not found");
+          return done(null, false);
+        }
+        
+        console.log("LocalStrategy - User found, comparing passwords");
+        console.log("Input password:", password);
+        console.log("Stored password:", user.password);
+        
+        const passwordsMatch = await comparePasswords(password, user.password);
+        console.log("Passwords match:", passwordsMatch);
+        
+        if (!passwordsMatch) {
+          console.log("LocalStrategy - Password mismatch");
           return done(null, false);
         } else {
+          console.log("LocalStrategy - Authentication successful");
           return done(null, user);
         }
       } catch (error) {
+        console.log("LocalStrategy - Error:", error);
         return done(error);
       }
     }),
@@ -89,13 +106,28 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
+    console.log("Login attempt:", {
+      username: req.body.username,
+      password: req.body.password
+    });
+    
     passport.authenticate("local", (err: Error | null, user: SelectUser | false, info: any) => {
-      if (err) return next(err);
-      if (!user) return res.status(401).json({ message: "Invalid credentials" });
+      if (err) {
+        console.log("Login error:", err);
+        return next(err);
+      }
+      if (!user) {
+        console.log("Authentication failed - invalid credentials");
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
       
       req.login(user, (err) => {
-        if (err) return next(err);
+        if (err) {
+          console.log("Login session error:", err);
+          return next(err);
+        }
         
+        console.log("Authentication successful for user:", user.username);
         // Remove password from response
         const { password, ...userWithoutPassword } = user;
         res.status(200).json(userWithoutPassword);

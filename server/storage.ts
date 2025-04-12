@@ -1,5 +1,5 @@
 import { students, type Student, type InsertStudent, type StudentStats, type User, type InsertUser } from "@shared/schema";
-import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema, Document, Model } from "mongoose";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { Pool } from '@neondatabase/serverless';
 import session from "express-session";
@@ -15,13 +15,13 @@ export interface IStorage {
   updateStudent(id: number, student: Partial<InsertStudent>): Promise<Student | undefined>;
   deleteStudent(id: number): Promise<boolean>;
   getStudentStats(): Promise<StudentStats>;
-  
+
   // User authentication
-  getUser(id: number): Promise<User | undefined>;
+  getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, userData: Partial<User>): Promise<User | undefined>;
-  
+  updateUser(id: string, userData: Partial<User>): Promise<User | undefined>;
+
   // Session store for authentication
   sessionStore: session.Store;
 }
@@ -48,7 +48,7 @@ interface IStudentDocument extends Document {
   address?: string;
   notes?: string;
   status: "active" | "inactive" | "pending";
-  userId?: number; // Reference to user account
+  userId?: string; // Reference to user account, changed to string to match ObjectId
 }
 
 interface IUserDocument extends Document {
@@ -69,23 +69,23 @@ const StudentSchema = new Schema({
   classSection: { type: String },
   address: { type: String },
   notes: { type: String },
-  status: { 
-    type: String, 
-    enum: ["active", "inactive", "pending"], 
-    default: "active", 
-    required: true 
+  status: {
+    type: String,
+    enum: ["active", "inactive", "pending"],
+    default: "active",
+    required: true
   },
-  userId: { type: Number } // Reference to user account
+  userId: { type: String } // Reference to user account, changed to string
 });
 
 const UserSchema = new Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { 
-    type: String, 
-    enum: ["admin", "student"], 
-    default: "student", 
-    required: true 
+  role: {
+    type: String,
+    enum: ["admin", "student"],
+    default: "student",
+    required: true
   },
   createdAt: { type: Date, default: Date.now },
   lastLogin: { type: Date }
@@ -93,8 +93,8 @@ const UserSchema = new Schema({
 
 // MongoDB Storage implementation
 export class MongoStorage implements IStorage {
-  private StudentModel: mongoose.Model<IStudentDocument>;
-  private UserModel: mongoose.Model<IUserDocument>;
+  private StudentModel: Model<IStudentDocument>;
+  private UserModel: Model<IUserDocument>;
   private isConnected: boolean = false;
   private cache: Map<string, { data: any, timestamp: number }> = new Map();
   private cacheTTL = 60000; // 1 minute cache TTL
@@ -103,18 +103,18 @@ export class MongoStorage implements IStorage {
   constructor() {
     try {
       console.log("Attempting to connect to MongoDB...");
-      
+
       // We need to encode the special characters in the password
       const username = "nileshjeet12345";
       const password = encodeURIComponent("Subasini@1");
       const host = "student.jy8kqka.mongodb.net";
       const connectionString = `mongodb+srv://${username}:${password}@${host}/?retryWrites=true&w=majority&appName=Student`;
-      
+
       mongoose.connect(connectionString);
-      
+
       this.StudentModel = mongoose.model<IStudentDocument>('Student', StudentSchema);
       this.UserModel = mongoose.model<IUserDocument>('User', UserSchema);
-      this.sessionStore = connectMongo.create({ 
+      this.sessionStore = connectMongo.create({
         mongoUrl: connectionString,
         collectionName: 'sessions'
       });
@@ -128,11 +128,11 @@ export class MongoStorage implements IStorage {
 
   private getCached<T>(key: string): T | null {
     const cached = this.cache.get(key);
-    
+
     if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
       return cached.data as T;
     }
-    
+
     return null;
   }
 
@@ -146,7 +146,7 @@ export class MongoStorage implements IStorage {
 
   private convertToStudent(doc: IStudentDocument): Student {
     return {
-      id: parseInt(doc._id.toString().substring(0, 8), 16), // Generate numeric ID from ObjectId
+      id: parseInt(doc._id.toString().substring(0, 8), 16),
       studentId: doc.studentId,
       firstName: doc.firstName,
       lastName: doc.lastName,
@@ -160,10 +160,10 @@ export class MongoStorage implements IStorage {
       userId: doc.userId || null,
     };
   }
-  
+
   private convertToUser(doc: IUserDocument): User {
     return {
-      id: parseInt(doc._id.toString().substring(0, 8), 16), // Generate numeric ID from ObjectId
+      id: doc._id.toString(),
       username: doc.username,
       password: doc.password,
       role: doc.role,
@@ -175,22 +175,22 @@ export class MongoStorage implements IStorage {
   async getStudents(filters: StudentFilters = {}): Promise<Student[]> {
     const cacheKey = `students:${JSON.stringify(filters)}`;
     const cachedData = this.getCached<Student[]>(cacheKey);
-    
+
     if (cachedData) {
       return cachedData;
     }
-    
+
     try {
       const query: any = {};
-      
+
       if (filters.status && filters.status !== 'all') {
         query.status = filters.status;
       }
-      
+
       if (filters.grade && filters.grade !== 0) {
         query.grade = filters.grade;
       }
-      
+
       if (filters.search) {
         query.$or = [
           { firstName: { $regex: filters.search, $options: 'i' } },
@@ -199,14 +199,14 @@ export class MongoStorage implements IStorage {
           { studentId: { $regex: filters.search, $options: 'i' } }
         ];
       }
-      
+
       let findQuery = this.StudentModel.find(query);
-      
+
       // Sorting
       if (filters.sort) {
         const [field, direction] = filters.sort.split('_');
         const sortDir = direction === 'asc' ? 1 : -1;
-        
+
         if (field === 'name') {
           findQuery = findQuery.sort({ firstName: sortDir, lastName: sortDir });
         } else if (field === 'id') {
@@ -216,16 +216,16 @@ export class MongoStorage implements IStorage {
         // Default sort
         findQuery = findQuery.sort({ firstName: 1 });
       }
-      
+
       // Pagination
       if (filters.page && filters.limit) {
         const skip = (filters.page - 1) * filters.limit;
         findQuery = findQuery.skip(skip).limit(filters.limit);
       }
-      
+
       const documents = await findQuery.exec();
       const students = documents.map(doc => this.convertToStudent(doc));
-      
+
       this.setCache(cacheKey, students);
       return students;
     } catch (error) {
@@ -237,20 +237,20 @@ export class MongoStorage implements IStorage {
   async getStudent(id: number): Promise<Student | undefined> {
     const cacheKey = `student:${id}`;
     const cachedData = this.getCached<Student>(cacheKey);
-    
+
     if (cachedData) {
       return cachedData;
     }
-    
+
     try {
       // Since we're converting ObjectId to numeric ID, we need to fetch all and find by our generated ID
       const students = await this.getStudents();
       const student = students.find(s => s.id === id);
-      
+
       if (student) {
         this.setCache(cacheKey, student);
       }
-      
+
       return student;
     } catch (error) {
       console.error(`Error getting student with id ${id}:`, error);
@@ -261,18 +261,18 @@ export class MongoStorage implements IStorage {
   async getStudentById(studentId: string): Promise<Student | undefined> {
     const cacheKey = `studentById:${studentId}`;
     const cachedData = this.getCached<Student>(cacheKey);
-    
+
     if (cachedData) {
       return cachedData;
     }
-    
+
     try {
       const document = await this.StudentModel.findOne({ studentId }).exec();
-      
+
       if (!document) {
         return undefined;
       }
-      
+
       const student = this.convertToStudent(document);
       this.setCache(cacheKey, student);
       return student;
@@ -286,7 +286,7 @@ export class MongoStorage implements IStorage {
     try {
       const newStudent = new this.StudentModel(student);
       const savedDoc = await newStudent.save();
-      
+
       this.invalidateCache();
       return this.convertToStudent(savedDoc);
     } catch (error) {
@@ -299,22 +299,22 @@ export class MongoStorage implements IStorage {
     try {
       // Find student by our generated ID
       const student = await this.getStudent(id);
-      
+
       if (!student) {
         return undefined;
       }
-      
+
       // Update by studentId which is unique in MongoDB
       const updatedDoc = await this.StudentModel.findOneAndUpdate(
         { studentId: student.studentId },
         studentData,
         { new: true }
       ).exec();
-      
+
       if (!updatedDoc) {
         return undefined;
       }
-      
+
       this.invalidateCache();
       return this.convertToStudent(updatedDoc);
     } catch (error) {
@@ -327,14 +327,14 @@ export class MongoStorage implements IStorage {
     try {
       // Find student by our generated ID
       const student = await this.getStudent(id);
-      
+
       if (!student) {
         return false;
       }
-      
+
       // Delete by studentId which is unique in MongoDB
       const result = await this.StudentModel.deleteOne({ studentId: student.studentId }).exec();
-      
+
       this.invalidateCache();
       return result.deletedCount === 1;
     } catch (error) {
@@ -346,27 +346,27 @@ export class MongoStorage implements IStorage {
   async getStudentStats(): Promise<StudentStats> {
     const cacheKey = 'studentStats';
     const cachedData = this.getCached<StudentStats>(cacheKey);
-    
+
     if (cachedData) {
       return cachedData;
     }
-    
+
     try {
       const totalStudents = await this.StudentModel.countDocuments();
       const activeStudents = await this.StudentModel.countDocuments({ status: 'active' });
       const pendingApprovals = await this.StudentModel.countDocuments({ status: 'pending' });
-      
+
       // For issues reported, we'll use a count of inactive students as a proxy
       // In a real app, you might have a separate collection for issues
       const issuesReported = await this.StudentModel.countDocuments({ status: 'inactive' });
-      
+
       const stats: StudentStats = {
         totalStudents,
         activeStudents,
         pendingApprovals,
         issuesReported
       };
-      
+
       this.setCache(cacheKey, stats);
       return stats;
     } catch (error) {
@@ -374,25 +374,23 @@ export class MongoStorage implements IStorage {
       throw new Error("Failed to fetch student statistics");
     }
   }
-  
+
   // User Authentication Methods
-  async getUser(id: number): Promise<User | undefined> {
+  async getUser(id: string): Promise<User | undefined> {
     const cacheKey = `user:${id}`;
     const cachedData = this.getCached<User>(cacheKey);
-    
+
     if (cachedData) {
       return cachedData;
     }
-    
+
     try {
-      // Since we're converting ObjectId to numeric ID, we need to fetch all users and find by our generated ID
-      const users = await this.UserModel.find().exec();
-      const user = users.find(u => parseInt(u._id.toString().substring(0, 8), 16) === id);
-      
+      const user = await this.UserModel.findById(id);
+
       if (!user) {
         return undefined;
       }
-      
+
       const convertedUser = this.convertToUser(user);
       this.setCache(cacheKey, convertedUser);
       return convertedUser;
@@ -401,22 +399,22 @@ export class MongoStorage implements IStorage {
       throw new Error("Failed to fetch user");
     }
   }
-  
+
   async getUserByUsername(username: string): Promise<User | undefined> {
     const cacheKey = `userByUsername:${username}`;
     const cachedData = this.getCached<User>(cacheKey);
-    
+
     if (cachedData) {
       return cachedData;
     }
-    
+
     try {
-      const user = await this.UserModel.findOne({ username }).exec();
-      
+      const user = await this.UserModel.findOne({ username });
+
       if (!user) {
         return undefined;
       }
-      
+
       const convertedUser = this.convertToUser(user);
       this.setCache(cacheKey, convertedUser);
       return convertedUser;
@@ -425,12 +423,12 @@ export class MongoStorage implements IStorage {
       throw new Error("Failed to fetch user");
     }
   }
-  
+
   async createUser(userData: InsertUser): Promise<User> {
     try {
       const newUser = new this.UserModel(userData);
       const savedUser = await newUser.save();
-      
+
       this.invalidateCache();
       return this.convertToUser(savedUser);
     } catch (error) {
@@ -438,34 +436,19 @@ export class MongoStorage implements IStorage {
       throw new Error("Failed to create user");
     }
   }
-  
-  async updateUser(id: number, userData: Partial<User>): Promise<User | undefined> {
+
+  async updateUser(id: string, userData: Partial<User>): Promise<User | undefined> {
     try {
-      const user = await this.getUser(id);
-      
-      if (!user) {
-        return undefined;
-      }
-      
-      // Find the MongoDB document using the user's generated ID
-      const users = await this.UserModel.find().exec();
-      const userDoc = users.find(u => parseInt(u._id.toString().substring(0, 8), 16) === id);
-      
-      if (!userDoc) {
-        return undefined;
-      }
-      
-      // Update the user
       const updatedDoc = await this.UserModel.findByIdAndUpdate(
-        userDoc._id,
+        id,
         userData,
         { new: true }
       ).exec();
-      
+
       if (!updatedDoc) {
         return undefined;
       }
-      
+
       this.invalidateCache();
       return this.convertToUser(updatedDoc);
     } catch (error) {
@@ -490,7 +473,7 @@ export class MemStorage implements IStorage {
     this.currentId = 1;
     this.currentStudentIdNum = 10001;
     this.currentUserId = 1;
-    
+
     // Create memory store for sessions
     const MemoryStore = require('memorystore')(session);
     this.sessionStore = new MemoryStore({
@@ -500,31 +483,31 @@ export class MemStorage implements IStorage {
 
   async getStudents(filters: StudentFilters = {}): Promise<Student[]> {
     let students = Array.from(this.students.values());
-    
+
     // Apply filters
     if (filters.status && filters.status !== 'all') {
       students = students.filter(s => s.status === filters.status);
     }
-    
+
     if (filters.grade && filters.grade !== 0) {
       students = students.filter(s => s.grade === filters.grade);
     }
-    
+
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
-      students = students.filter(s => 
+      students = students.filter(s =>
         s.firstName.toLowerCase().includes(searchLower) ||
         s.lastName.toLowerCase().includes(searchLower) ||
         s.email.toLowerCase().includes(searchLower) ||
         s.studentId.toLowerCase().includes(searchLower)
       );
     }
-    
+
     // Apply sorting
     if (filters.sort) {
       const [field, direction] = filters.sort.split('_');
       const sortMultiplier = direction === 'asc' ? 1 : -1;
-      
+
       if (field === 'name') {
         students.sort((a, b) => {
           const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
@@ -544,14 +527,14 @@ export class MemStorage implements IStorage {
         return nameA.localeCompare(nameB);
       });
     }
-    
+
     // Apply pagination
     if (filters.page && filters.limit) {
       const start = (filters.page - 1) * filters.limit;
       const end = start + filters.limit;
       students = students.slice(start, end);
     }
-    
+
     return students;
   }
 
@@ -566,13 +549,13 @@ export class MemStorage implements IStorage {
   async createStudent(student: InsertStudent): Promise<Student> {
     const id = this.currentId++;
     const studentId = student.studentId || `ST${this.currentStudentIdNum++}`;
-    
+
     // We need to validate status to ensure it's one of the allowed values
     let status: "active" | "inactive" | "pending" = "active";
     if (student.status && ["active", "inactive", "pending"].includes(student.status)) {
       status = student.status as "active" | "inactive" | "pending";
     }
-    
+
     // Ensure all required fields are set
     const newStudent: Student = {
       id,
@@ -588,33 +571,33 @@ export class MemStorage implements IStorage {
       status: status,
       userId: null // Will be linked to a user account if needed
     };
-    
+
     this.students.set(id, newStudent);
     return newStudent;
   }
 
   async updateStudent(id: number, studentData: Partial<InsertStudent>): Promise<Student | undefined> {
     const student = this.students.get(id);
-    
+
     if (!student) {
       return undefined;
     }
-    
+
     // Handle status field specially if it's being updated
     let status = student.status;
     if (studentData.status && ["active", "inactive", "pending"].includes(studentData.status)) {
       status = studentData.status as "active" | "inactive" | "pending";
     }
-    
+
     // Create a copy of studentData without the status field
     const { status: _, ...otherData } = studentData;
-    
+
     const updatedStudent: Student = {
       ...student,
       ...otherData,
       status // Use our validated status
     };
-    
+
     this.students.set(id, updatedStudent);
     return updatedStudent;
   }
@@ -625,7 +608,7 @@ export class MemStorage implements IStorage {
 
   async getStudentStats(): Promise<StudentStats> {
     const students = Array.from(this.students.values());
-    
+
     return {
       totalStudents: students.length,
       activeStudents: students.filter(s => s.status === 'active').length,
@@ -633,25 +616,25 @@ export class MemStorage implements IStorage {
       issuesReported: students.filter(s => s.status === 'inactive').length
     };
   }
-  
+
   // User Authentication Methods
   async getUser(id: number): Promise<User | undefined> {
     return this.users.get(id);
   }
-  
+
   async getUserByUsername(username: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(u => u.username === username);
   }
-  
+
   async createUser(userData: InsertUser): Promise<User> {
     const id = this.currentUserId++;
-    
+
     // Validate role to ensure it's one of the allowed values
     let role: "admin" | "student" = "student";
     if (userData.role && ["admin", "student"].includes(userData.role)) {
       role = userData.role as "admin" | "student";
     }
-    
+
     const newUser: User = {
       id,
       username: userData.username,
@@ -660,23 +643,23 @@ export class MemStorage implements IStorage {
       createdAt: new Date(),
       lastLogin: null
     };
-    
+
     this.users.set(id, newUser);
     return newUser;
   }
-  
+
   async updateUser(id: number, userData: Partial<User>): Promise<User | undefined> {
     const user = this.users.get(id);
-    
+
     if (!user) {
       return undefined;
     }
-    
+
     const updatedUser: User = {
       ...user,
       ...userData
     };
-    
+
     this.users.set(id, updatedUser);
     return updatedUser;
   }
@@ -690,7 +673,7 @@ try {
 } catch (error) {
   console.warn("Failed to initialize MongoDB, falling back to in-memory storage:", error);
   storage = new MemStorage();
-  
+
   // Add some initial data for development purposes
   (async () => {
     // Create an admin user with plain text password for development
@@ -706,7 +689,7 @@ try {
       password: "password", // Plain text for development only
       role: "student"
     });
-    
+
     // Create sample students
     // Create a student and link it to the student user
     const studentData = {
@@ -721,10 +704,10 @@ try {
       address: "123 Main St",
       notes: "Honor roll student"
     };
-    
+
     // Just create the student (we'll handle user links differently)
     const student = await storage.createStudent(studentData);
-    
+
     await storage.createStudent({
       studentId: "ST10024",
       firstName: "Jane",
@@ -737,7 +720,7 @@ try {
       address: "456 Oak Ave",
       notes: ""
     });
-    
+
     console.log("Demo accounts created:");
     console.log(" - Admin:   username: admin,   password: password");
     console.log(" - Student: username: student, password: password");

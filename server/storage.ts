@@ -693,6 +693,21 @@ try {
   
   // Add some initial data for development purposes
   (async () => {
+    // Create an admin user
+    const adminUser = await storage.createUser({
+      username: "admin",
+      password: "$2a$10$EwtnAY0yVXjQQAwSoU.cMO.lnxCVbRpMjlW6/9dkGzjCkFEUX5voa", // "password" hashed with bcrypt
+      role: "admin"
+    });
+
+    // Create a student user
+    const studentUser = await storage.createUser({
+      username: "student",
+      password: "$2a$10$EwtnAY0yVXjQQAwSoU.cMO.lnxCVbRpMjlW6/9dkGzjCkFEUX5voa", // "password" hashed with bcrypt
+      role: "student"
+    });
+    
+    // Create sample students
     await storage.createStudent({
       studentId: "ST10023",
       firstName: "John",
@@ -703,7 +718,8 @@ try {
       classSection: "10A",
       status: "active",
       address: "123 Main St",
-      notes: "Honor roll student"
+      notes: "Honor roll student",
+      userId: studentUser.id // Link to student user
     });
     
     await storage.createStudent({
@@ -718,6 +734,10 @@ try {
       address: "456 Oak Ave",
       notes: ""
     });
+    
+    console.log("Demo accounts created:");
+    console.log(" - Admin:   username: admin,   password: password");
+    console.log(" - Student: username: student, password: password");
   })();
 }
 

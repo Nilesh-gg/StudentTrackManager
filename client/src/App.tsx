@@ -5,11 +5,14 @@ import { Toaster } from "@/components/ui/toaster";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import Students from "@/pages/Students";
+import AuthPage from "@/pages/auth-page";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { useState } from "react";
+import { AuthProvider } from "@/hooks/use-auth";
+import { ProtectedRoute } from "@/lib/protected-route";
 
-function Router() {
+function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const toggleSidebar = () => {
@@ -25,24 +28,42 @@ function Router() {
         
         <main className="flex-1 relative overflow-y-auto focus:outline-none">
           <div className="py-6">
-            <Switch>
-              <Route path="/" component={Dashboard} />
-              <Route path="/students" component={Students} />
-              <Route component={NotFound} />
-            </Switch>
+            {children}
           </div>
         </main>
       </div>
-      
-      <Toaster />
     </div>
+  );
+}
+
+function Router() {
+  return (
+    <>
+      <Switch>
+        <Route path="/auth" component={AuthPage} />
+        <ProtectedRoute path="/" component={() => (
+          <AppLayout>
+            <Dashboard />
+          </AppLayout>
+        )} />
+        <ProtectedRoute path="/students" component={() => (
+          <AppLayout>
+            <Students />
+          </AppLayout>
+        )} />
+        <Route component={NotFound} />
+      </Switch>
+      <Toaster />
+    </>
   );
 }
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Router />
+      <AuthProvider>
+        <Router />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

@@ -67,19 +67,17 @@ export class MongoStorage implements IStorage {
     try {
       console.log("Attempting to connect to MongoDB...");
       
-      // Since we're having connection issues, let's default to in-memory storage for now
-      throw new Error("Using in-memory storage instead of MongoDB");
+      // We need to encode the special characters in the password
+      const username = "nileshjeet12345";
+      const password = encodeURIComponent("Subasini@1");
+      const host = "student.jy8kqka.mongodb.net";
+      const connectionString = `mongodb+srv://${username}:${password}@${host}/?retryWrites=true&w=majority&appName=Student`;
       
-      // The code below is intentionally unreachable as we're forcing the fallback
-      /*
-      const resolvedConnectionString = `mongodb+srv://nileshjeet12345:${process.env.DB_PASSWORD}@cluster0.jnfamok.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-      
-      mongoose.connect(resolvedConnectionString);
+      mongoose.connect(connectionString);
       
       this.StudentModel = mongoose.model<IStudentDocument>('Student', StudentSchema);
       this.isConnected = true;
       console.log("MongoDB connected successfully");
-      */
     } catch (error) {
       console.error("MongoDB connection error:", error);
       throw new Error("Failed to connect to MongoDB - using in-memory storage");

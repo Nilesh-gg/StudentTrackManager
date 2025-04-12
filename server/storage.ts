@@ -708,7 +708,8 @@ try {
     });
     
     // Create sample students
-    await storage.createStudent({
+    // Create a student and link it to the student user
+    const studentData = {
       studentId: "ST10023",
       firstName: "John",
       lastName: "Doe",
@@ -718,9 +719,17 @@ try {
       classSection: "10A",
       status: "active",
       address: "123 Main St",
-      notes: "Honor roll student",
-      userId: studentUser.id // Link to student user
-    });
+      notes: "Honor roll student"
+    };
+    
+    // Add the user ID after creation if using MongoDB
+    const student = await storage.createStudent(studentData);
+    if (storage instanceof MongoStorage) {
+      await (storage as MongoStorage).StudentModel.findByIdAndUpdate(
+        student.id,
+        { userId: studentUser.id }
+      );
+    }
     
     await storage.createStudent({
       studentId: "ST10024",

@@ -1,7 +1,16 @@
-import { BellIcon, Search } from "lucide-react";
+import { BellIcon, Search, LogOut, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useLocation, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface HeaderProps {
   onSidebarToggle: () => void;
@@ -10,6 +19,7 @@ interface HeaderProps {
 export default function Header({ onSidebarToggle }: HeaderProps) {
   const [location, setLocation] = useLocation();
   const [searchParams, setSearchParams] = useSearch();
+  const { user, logoutMutation } = useAuth();
   
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -25,6 +35,10 @@ export default function Header({ onSidebarToggle }: HeaderProps) {
       // Navigate to students page with search query
       setLocation(`/students?search=${encodeURIComponent(searchQuery)}`);
     }
+  };
+
+  const handleLogout = () => {
+    logoutMutation.mutate();
   };
   
   return (
@@ -66,14 +80,43 @@ export default function Header({ onSidebarToggle }: HeaderProps) {
             </Button>
             
             <div className="ml-3 relative">
-              <div>
-                <Button variant="ghost" className="max-w-xs bg-white flex items-center text-sm rounded-full">
-                  <span className="sr-only">Open user menu</span>
-                  <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
-                    <span className="font-medium text-gray-600">AD</span>
-                  </div>
+              {user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="max-w-xs bg-white flex items-center text-sm rounded-full">
+                      <span className="sr-only">Open user menu</span>
+                      <div className="h-8 w-8 rounded-full bg-primary text-white flex items-center justify-center">
+                        <span className="font-medium">
+                          {user.username.substring(0, 2).toUpperCase()}
+                        </span>
+                      </div>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>
+                      <div className="flex flex-col">
+                        <span>{user.username}</span>
+                        <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link href="/profile" className="cursor-pointer">
+                        <User className="mr-2 h-4 w-4" />
+                        <span>Profile</span>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleLogout} disabled={logoutMutation.isPending} className="cursor-pointer">
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>{logoutMutation.isPending ? "Logging out..." : "Logout"}</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button asChild variant="default" size="sm">
+                  <Link href="/auth">Login</Link>
                 </Button>
-              </div>
+              )}
             </div>
           </div>
         </div>
